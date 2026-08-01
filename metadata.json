@@ -1,0 +1,8 @@
+{
+  "name": "PackYatra Admin Dashboard",
+  "description": "PackYatra Packers and Movers admin dashboard app imported from GitHub.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
