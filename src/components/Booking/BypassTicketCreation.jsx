@@ -454,7 +454,7 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
     setLoading(true);
 
     const generatedTicketNo = `TK${Math.floor(100000 + Math.random() * 900000)}`;
-    const generatedQuotationNo = `PY-QT-${Math.floor(1000 + Math.random() * 9000)}`;
+    const generatedQuotationNo = `PACKY-${Math.floor(1000 + Math.random() * 9000)}`;
     const finalAmount = parseFloat(priceOverride) || 0;
     const paid = parseFloat(paidAmount) || 0;
 
