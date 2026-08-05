@@ -463,8 +463,10 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
 
     const payload = {
       userID: parseInt(userId, 10) || 1,
-      sourceAddressID: addressId || "1",
-      destinationAddressID: addressId || "1",
+      quotationNumber: generatedQuotationNo,
+      ticket_distribution: "Admin Bypass",
+      sourceAddressID: addressId || 1,
+      destinationAddressID: addressId || 1,
       pickupDate: new Date(shiftingDate).toISOString(),
       pickupTimeSlotID: parseInt(selectedTimeSlot, 10) || 1,
       slotTime: slotTimeText,
