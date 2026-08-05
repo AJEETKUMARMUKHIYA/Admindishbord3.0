@@ -504,7 +504,7 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
     try {
       let resData = null;
       try {
-        const res = await AxiosClient.post("/Booking/CreateTicketBypass", payload);
+        const res = await AxiosClient.post("/Booking/CreateBooking", payload);
         resData = res.data;
       } catch (err) {
         console.warn("API bypass endpoint fallback triggered:", err);
