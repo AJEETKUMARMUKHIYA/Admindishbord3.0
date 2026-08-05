@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import Quotation from './Quotation'
 import Invoice from './Invoice'
-import { FileText, Receipt } from 'lucide-react'
+import MobileSearch from './MobileSearch'
+import { FileText, Receipt, Search } from 'lucide-react'
 
 export default function Reports() {
   const [activeTab, setActiveTab] = useState('quotation')
@@ -55,7 +56,7 @@ export default function Reports() {
           border-radius: 10px;
           border: 1px solid #e2e8f0;
           margin-bottom: 24px;
-          max-width: 480px;
+          max-width: 620px;
         }
 
         #reportsPage .tab-trigger {
@@ -98,7 +99,7 @@ export default function Reports() {
       <div className="reports-header">
         <div className="reports-meta">OPERATIONS & INTEL</div>
         <h1 className="reports-title">Reports & Analytics</h1>
-        <p className="reports-subtitle">Track, generate, and edit digital quotation sheets and commercial invoice logs.</p>
+        <p className="reports-subtitle">Track, generate, and search digital quotation sheets, invoices, and customer records.</p>
       </div>
 
       <div className="tabs-wrapper">
@@ -117,11 +118,20 @@ export default function Reports() {
           <Receipt size={16} />
           <span>Invoices</span>
         </button>
+
+        <button
+          className={`tab-trigger ${activeTab === 'mobileSearch' ? 'active' : ''}`}
+          onClick={() => setActiveTab('mobileSearch')}
+        >
+          <Search size={16} />
+          <span>Search by Mobile</span>
+        </button>
       </div>
 
       <div className="tab-panel">
         {activeTab === 'quotation' && <Quotation />}
         {activeTab === 'invoice' && <Invoice />}
+        {activeTab === 'mobileSearch' && <MobileSearch />}
       </div>
     </div>
   )

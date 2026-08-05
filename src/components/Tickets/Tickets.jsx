@@ -97,27 +97,51 @@ const Tickets = ({ tickets: initialTickets, supervisors, onAssignTicket, onUpdat
     };
   };
 
-  // Fetch directly from /Dashboard/recent-bookings
+  // Fetch directly from /Dashboard/recent-bookings & merge local storage tickets
   const fetchRecentBookings = async () => {
     try {
       setLoading(true);
-      const res = await axiosClient.get(config.urls.dashboardRecentBookings);
-      // console.log('Fetched dashboardRecentBookings:', res.data);
-      const items = res.data?.data || (Array.isArray(res.data) ? res.data : null);
-      if (items && items.length > 0) {
-        const mapped = items.map(mapBookingToTicket);
-        setTicketsList(mapped);
+      let apiItems = [];
+      try {
+        const res = await axiosClient.get(config.urls.dashboardRecentBookings);
+        apiItems = res.data?.data || (Array.isArray(res.data) ? res.data : []);
+      } catch (err) {
+        console.error('Failed to fetch dashboardRecentBookings endpoint:', err);
       }
-    } catch (err) {
-      console.error('Failed to fetch dashboardRecentBookings endpoint:', err);
+
+      let localItems = [];
+      try {
+        const saved = localStorage.getItem('packyatra_tickets');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) localItems = parsed;
+        }
+      } catch (e) {
+        console.warn('Error loading local tickets:', e);
+      }
+
+      const combined = [...localItems, ...apiItems];
+      const uniqueMap = new Map();
+      combined.forEach(item => {
+        const key = String(item.bookingID || item.bookingId || item.ticketNo || item.id);
+        if (!uniqueMap.has(key)) {
+          uniqueMap.set(key, mapBookingToTicket(item));
+        }
+      });
+
+      setTicketsList(Array.from(uniqueMap.values()));
     } finally {
       setLoading(false);
     }
   };
 
-  // Load dashboard recent bookings on mount
+  // Load dashboard recent bookings on mount & listen to updates
   useEffect(() => {
     fetchRecentBookings();
+    window.addEventListener('booking-update', fetchRecentBookings);
+    return () => {
+      window.removeEventListener('booking-update', fetchRecentBookings);
+    };
   }, []);
 
   // ================= DATA FILTERING =================

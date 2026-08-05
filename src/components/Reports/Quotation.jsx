@@ -206,22 +206,46 @@ export default function Quotation() {
 
   useEffect(() => {
     fetchData();
+    window.addEventListener('booking-update', fetchData);
+    return () => {
+      window.removeEventListener('booking-update', fetchData);
+    };
   }, []);
 
   const fetchTickets = async () => {
+    let apiData = [];
     try {
       const response = await axiosClient.get(
         config.urls.dashboardRecentBookings
       );
 
-      if (response.data?.data) return response.data.data;
-      if (Array.isArray(response.data)) return response.data;
-
-      return [];
+      if (response.data?.data) apiData = response.data.data;
+      else if (Array.isArray(response.data)) apiData = response.data;
     } catch (error) {
       console.error("Error fetching tickets:", error);
-      return [];
     }
+
+    let localData = [];
+    try {
+      const saved = localStorage.getItem('packyatra_tickets');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) localData = parsed;
+      }
+    } catch (e) {
+      console.warn("Error loading local tickets in Quotation:", e);
+    }
+
+    const combined = [...localData, ...apiData];
+    const uniqueMap = new Map();
+    combined.forEach(t => {
+      const key = String(t.quotationNumber || t.bookingID || t.bookingId || t.ticketNo || t.id);
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, t);
+      }
+    });
+
+    return Array.from(uniqueMap.values());
   };
 
   const fetchData = async () => {

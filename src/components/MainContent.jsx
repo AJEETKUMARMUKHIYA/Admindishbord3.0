@@ -7,6 +7,8 @@ import Vehicle from './Vehicle/Vehicle';
 import ManageUserPage from '../admin/Users/ManageUserPage';
 import Settings from './Settings';
 import TicketBookingForm from './Booking/TicketBookingForm';
+import IVRSystem from './IVR/IVRSystem';
+import IVRCallHistory from './IVR/IVRCallHistory';
 import { useEffect, useState } from 'react';
 
 const MainContent = ({
@@ -95,6 +97,24 @@ const MainContent = ({
         return (
           <TicketBookingForm
             onBookingCreated={onRefreshData}
+            onNavigate={onNavigate}
+          />
+        );
+      case 'ivr':
+        return (
+          <IVRSystem
+            supervisors={supervisors}
+            adminUsers={adminUsers}
+            tickets={tickets}
+            userData={userData}
+            onNavigate={onNavigate}
+          />
+        );
+      case 'ivrCallHistory':
+        return (
+          <IVRCallHistory
+            supervisors={supervisors}
+            tickets={tickets}
             onNavigate={onNavigate}
           />
         );

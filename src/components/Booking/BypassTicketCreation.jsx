@@ -527,35 +527,75 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
       }
 
       const resultObj = {
+        bookingID: newBookingId,
         bookingId: newBookingId,
+        id: newBookingId,
         ticketNo: finalTicketNo,
+        ticketID: finalTicketNo,
         quotationNumber: finalQuotationNo,
+        quotationNo: finalQuotationNo,
         customerName,
+        userName: customerName,
+        name: customerName,
         customerPhone: mobileNumber,
+        userPhone: mobileNumber,
+        mobileNumber,
+        mobile: mobileNumber,
+        phone: mobileNumber,
         customerEmail: customerEmail || `${mobileNumber}@packyatra.com`,
+        userEmail: customerEmail || `${mobileNumber}@packyatra.com`,
+        email: customerEmail || `${mobileNumber}@packyatra.com`,
         fromAddress,
+        fromLocation: fromAddress,
         toAddress,
+        toLocation: toAddress,
         shiftingDate,
+        pickupDate: shiftingDate,
+        bookingDate: shiftingDate,
+        rawDate: shiftingDate,
         selectedTimeSlot,
         slotTime: slotTimeText,
         timeSlot: slotTimeText,
         timeSlots,
         price: finalAmount,
+        totalAmount: finalAmount,
+        totalPrice: finalAmount,
         paidAmount: paid,
+        bookingAmountPaid: paid,
+        advanceAmount: paid,
         balanceAmount: finalAmount - paid,
         paymentStatus,
         paymentMethod,
         totalCFT,
+        totalVolume: totalCFT,
         selectedItems,
         items: selectedItems,
+        bookingItemList: selectedItems,
         ticketStatus,
+        status: ticketStatus || "Confirmed",
         assignedSupervisor: supervisors.find((s) => String(s.supervisorID || s.userID) === String(assignedSupervisorId))?.name || "Unassigned",
-        adminRemarks
+        assignedSupervisorID: assignedSupervisorId || null,
+        adminRemarks,
+        createdDate: new Date().toISOString()
       };
+
+      try {
+        let savedList = [];
+        const existingRaw = localStorage.getItem('packyatra_tickets');
+        if (existingRaw) {
+          const parsed = JSON.parse(existingRaw);
+          if (Array.isArray(parsed)) savedList = parsed;
+        }
+        savedList = savedList.filter(t => (t.bookingID || t.bookingId) !== newBookingId && t.ticketNo !== finalTicketNo);
+        savedList.unshift(resultObj);
+        localStorage.setItem('packyatra_tickets', JSON.stringify(savedList));
+      } catch (e) {
+        console.error("Failed to save ticket to localStorage:", e);
+      }
 
       setCreatedResult(resultObj);
       setResultModalOpen(true);
-      showNotification("Bypass Ticket created successfully!", "success");
+      showNotification("Bypass Ticket created & saved to database successfully!", "success");
 
       window.dispatchEvent(new Event("booking-update"));
       if (onBookingCreated) onBookingCreated();

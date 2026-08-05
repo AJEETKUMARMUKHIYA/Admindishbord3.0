@@ -56,20 +56,44 @@ export const generateGoodsConsignmentPDF = async(bookingData) => {
 
   const inv = bookingData?.invoice || {};
 
-  // Draw Background Watermark
+  // Draw Background Watermark - Ultra-faint background watermark that never hides content
   try {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(26);
-    doc.setTextColor(230, 235, 245);
-    doc.text("PACKYATRA OFFICIAL RECORD", PAGE_WIDTH / 2, PAGE_HEIGHT / 2, {
-      align: "center",
-      angle: 45
-    });
-  } catch {
+    if (typeof doc.saveGraphicsState === "function") {
+      doc.saveGraphicsState();
+    }
+
+    const GStateClass = doc.GState || (doc.internal && doc.internal.GState);
+    if (GStateClass && typeof doc.setGState === "function") {
+      doc.setGState(new GStateClass({ opacity: 0.045 }));
+    }
+
     doc.setFont("helvetica", "bold");
     doc.setFontSize(22);
-    doc.setTextColor(235, 240, 248);
-    doc.text("PACKYATRA OFFICIAL RECORD", PAGE_WIDTH / 2, PAGE_HEIGHT / 2, { align: "center" });
+    doc.setTextColor(225, 233, 245);
+
+    try {
+      doc.text("PACKYATRA OFFICIAL RECORD", PAGE_WIDTH / 2, PAGE_HEIGHT / 2, {
+        align: "center",
+        angle: 45
+      });
+    } catch {
+      doc.text("PACKYATRA OFFICIAL RECORD", PAGE_WIDTH / 2, PAGE_HEIGHT / 2, { align: "center" });
+    }
+
+    if (typeof doc.restoreGraphicsState === "function") {
+      doc.restoreGraphicsState();
+    } else if (GStateClass && typeof doc.setGState === "function") {
+      doc.setGState(new GStateClass({ opacity: 1.0 }));
+    }
+  } catch {
+    try {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(20);
+      doc.setTextColor(245, 248, 253);
+      doc.text("PACKYATRA OFFICIAL RECORD", PAGE_WIDTH / 2, PAGE_HEIGHT / 2, { align: "center" });
+    } catch {
+      // Fallback ignore
+    }
   }
 
   /* =======================================================

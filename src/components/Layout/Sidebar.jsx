@@ -16,7 +16,9 @@ import {
   LogOut,
   ChevronDown,
   Sun,
-  Moon
+  Moon,
+  PhoneCall,
+  History
 } from 'lucide-react';
 
 
@@ -50,8 +52,8 @@ const Sidebar = ({
 
   // 🎯 Role-based access mapping
   const roleAccess = {
-    1: ['dashboard', 'vehicle', 'users', 'adminUsers', 'supervisor', 'tickets', 'bookingForm', 'manageUserPage', 'reports', 'settings'], // Admin
-    2: ['dashboard', 'tickets', 'bookingForm', 'reports'] // Supervisor
+    1: ['dashboard', 'vehicle', 'users', 'adminUsers', 'supervisor', 'tickets', 'bookingForm', 'manageUserPage', 'ivr', 'ivrCallHistory', 'reports', 'settings'], // Admin
+    2: ['dashboard', 'tickets', 'bookingForm', 'ivr', 'ivrCallHistory', 'reports'] // Supervisor
   };
 
   // 📋 Navigation items with submenu support
@@ -70,6 +72,8 @@ const Sidebar = ({
     { id: 'tickets', icon: Ticket, text: 'Tickets' },
     { id: 'bookingForm', icon: PlusCircle, text: 'Book Ticket' },
     { id: 'manageUserPage', icon: FolderEdit, text: 'Ticket Management' },
+    { id: 'ivr', icon: PhoneCall, text: 'IVR Dialer' },
+    { id: 'ivrCallHistory', icon: History, text: 'Call History Logs' },
     { id: 'reports', icon: BarChart3, text: 'Reports' },
     { id: 'settings', icon: SettingsIcon, text: 'Settings' }
   ];

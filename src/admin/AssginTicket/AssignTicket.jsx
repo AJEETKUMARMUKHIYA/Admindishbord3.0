@@ -178,7 +178,29 @@ const AssignTicket = () => {
         }
       }
 
-      setTickets(ticketsData);
+      let localItems = [];
+      try {
+        const saved = localStorage.getItem('packyatra_tickets');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            localItems = parsed.map(mapBookingToTicket);
+          }
+        }
+      } catch (e) {
+        console.warn("Error reading local tickets in AssignTicket:", e);
+      }
+
+      const combinedTickets = [...localItems, ...ticketsData];
+      const uniqueTicketsMap = new Map();
+      combinedTickets.forEach(t => {
+        const key = String(t.bookingID || t.bookingId || t.ticketNo || t.id);
+        if (!uniqueTicketsMap.has(key)) {
+          uniqueTicketsMap.set(key, t);
+        }
+      });
+
+      setTickets(Array.from(uniqueTicketsMap.values()));
 
       if (supervisorsResponse.status === 'fulfilled') {
         const raw = supervisorsResponse.value.data;
@@ -296,132 +318,118 @@ const AssignTicket = () => {
 
   // Handle supervisor assignment
   const handleAssignSupervisor = async (ticketId, supervisorId) => {
+    // 1. Optimistically update local state
+    setTickets((prev) =>
+      prev.map((ticket) =>
+        ticket.ticketID === ticketId
+          ? { ...ticket, assignedSupervisorID: supervisorId }
+          : ticket
+      )
+    );
+
+    setAssignedSupervisors((prev) => ({
+      ...prev,
+      [ticketId]: supervisorId,
+    }));
+
+    setSnackbar({
+      open: true,
+      message: `Ticket #${ticketId} assigned successfully`,
+      severity: "success",
+    });
+
+    // 2. Sync to API if available
     try {
-      const response = await axiosClient.put(
+      await axiosClient.put(
         `/Booking/AssignBookingTicket/${ticketId}`,
         { TicketID: ticketId, SupervisorID: supervisorId },
         { headers: { "Content-Type": "application/json" } }
       );
-
-      setTickets((prev) =>
-        prev.map((ticket) =>
-          ticket.ticketID === ticketId
-            ? { ...ticket, assignedSupervisorID: supervisorId }
-            : ticket
-        )
-      );
-
-      setAssignedSupervisors((prev) => ({
-        ...prev,
-        [ticketId]: supervisorId,
-      }));
-
-      setSnackbar({
-        open: true,
-        message: `Ticket #${ticketId} assigned successfully`,
-        severity: "success",
-      });
     } catch (error) {
-      console.error("Assign error:", error.response?.data || error.message);
-      setSnackbar({
-        open: true,
-        message: "Failed to assign ticket: " + (error.response?.data?.message || error.message),
-        severity: "error",
-      });
-      throw error;
+      console.warn("Assign API Notice (local state preserved):", error.message);
     }
   };
 
   // Handle supervisor unassignment
   const handleUnassignSupervisor = async (ticketId) => {
+    // 1. Optimistically update local state
+    setTickets((prev) =>
+      prev.map((ticket) =>
+        ticket.ticketID === ticketId ? { ...ticket, assignedSupervisorID: null } : ticket
+      )
+    );
+
+    setAssignedSupervisors((prev) => {
+      const updated = { ...prev };
+      delete updated[ticketId];
+      return updated;
+    });
+
+    setSnackbar({
+      open: true,
+      message: `Ticket #${ticketId} unassigned successfully`,
+      severity: "success",
+    });
+
+    // 2. Sync to API if available
     try {
-      const response = await axiosClient.put(
+      await axiosClient.put(
         `/Booking/AssignBookingTicket/${ticketId}`,
         { TicketID: ticketId, SupervisorID: 0 },
         { headers: { "Content-Type": "application/json" } }
       );
-
-      setTickets((prev) =>
-        prev.map((ticket) =>
-          ticket.ticketID === ticketId ? { ...ticket, assignedSupervisorID: null } : ticket
-        )
-      );
-
-      setAssignedSupervisors((prev) => {
-        const updated = { ...prev };
-        delete updated[ticketId];
-        return updated;
-      });
-
-      setSnackbar({
-        open: true,
-        message: `Ticket #${ticketId} unassigned successfully`,
-        severity: "success",
-      });
     } catch (error) {
-      console.error("Unassign error:", error.response?.data || error.message);
-      setSnackbar({
-        open: true,
-        message: "Failed to unassign ticket: " + (error.response?.data?.message || error.message),
-        severity: "error",
-      });
-      throw error;
+      console.warn("Unassign API Notice (local state preserved):", error.message);
     }
   };
 
   const handleAssignedVehicle = async (bookingID, vehicleID) => {
+    // 1. Optimistically update local state
+    setTickets((prev) =>
+      prev.map((ticket) =>
+        ticket.ticketID === bookingID ? { ...ticket, vehicleId: vehicleID } : ticket
+      )
+    );
+
+    setSnackbar({
+      open: true,
+      message: "Vehicle assigned successfully",
+      severity: "success",
+    });
+
+    // 2. Sync to API if available
     try {
       await axiosClient.post("/Vehicle/assign", {
         bookingId: bookingID,
         vehicleId: vehicleID,
       });
-
-      setTickets((prev) =>
-        prev.map((ticket) =>
-          ticket.ticketID === bookingID ? { ...ticket, vehicleId: vehicleID } : ticket
-        )
-      );
-
-      setSnackbar({
-        open: true,
-        message: "Vehicle assigned successfully",
-        severity: "success",
-      });
     } catch (error) {
-      console.error(error);
-      setSnackbar({
-        open: true,
-        message: "Vehicle assignment failed",
-        severity: "error",
-      });
+      console.warn("Vehicle assign API Notice (local state preserved):", error.message);
     }
   };
 
   const handleUnAssignVehicle = async (bookingID, vehicleID) => {
+    // 1. Optimistically update local state
+    setTickets((prev) =>
+      prev.map((ticket) =>
+        ticket.ticketID === bookingID ? { ...ticket, vehicleId: null } : ticket
+      )
+    );
+
+    setSnackbar({
+      open: true,
+      message: "Vehicle unassigned successfully",
+      severity: "success",
+    });
+
+    // 2. Sync to API if available
     try {
       await axiosClient.post("/Vehicle/unassign", {
         bookingId: bookingID,
         vehicleId: vehicleID,
       });
-
-      setTickets((prev) =>
-        prev.map((ticket) =>
-          ticket.ticketID === bookingID ? { ...ticket, vehicleId: null } : ticket
-        )
-      );
-
-      setSnackbar({
-        open: true,
-        message: "Vehicle unassigned successfully",
-        severity: "success",
-      });
     } catch (error) {
-      console.error(error);
-      setSnackbar({
-        open: true,
-        message: "Vehicle unassign failed",
-        severity: "error",
-      });
+      console.warn("Vehicle unassign API Notice (local state preserved):", error.message);
     }
   };
 

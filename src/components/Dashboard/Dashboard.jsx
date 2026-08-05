@@ -217,25 +217,51 @@ const Dashboard = ({ userData }) => {
 
   const fetchRecentBookings = async () => {
     try {
-      const response = await axiosClient.get(config.urls.dashboardRecentBookings);
-      const bookingsData = response.data?.data || [];
+      let bookingsData = [];
+      try {
+        const response = await axiosClient.get(config.urls.dashboardRecentBookings);
+        bookingsData = response.data?.data || [];
+      } catch (err) {
+        console.warn("Notice fetching remote recent bookings:", err.message);
+      }
 
-      return bookingsData.map(booking => ({
-        ...booking,
-        ticketCreated: booking.ticketCreated || booking.createdAt || new Date().toISOString(),
-        bookingAmountPaid: booking.bookingAmountPaid || booking.paidAmount || 0,
-        formattedTicketDate: booking.formattedTicketDate ||
-          (booking.ticketCreated ? new Date(booking.ticketCreated).toLocaleDateString('en-IN', {
-            day: '2-digit', month: 'short', year: 'numeric'
-          }) : 'N/A'),
-        formattedPickupDate: booking.formattedPickupDate ||
-          (booking.pickupDate ? new Date(booking.pickupDate).toLocaleDateString('en-IN', {
-            day: '2-digit', month: 'short', year: 'numeric'
-          }) : 'N/A'),
-        paymentPercentage: booking.totalAmount && booking.bookingAmountPaid
-          ? Math.round((booking.bookingAmountPaid / booking.totalAmount) * 100)
-          : booking.paymentStatus === 'Paid' ? 100 : 0
-      }));
+      let localItems = [];
+      try {
+        const saved = localStorage.getItem('packyatra_tickets');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) localItems = parsed;
+        }
+      } catch (e) {
+        console.warn('Error reading local tickets:', e);
+      }
+
+      const combined = [...localItems, ...bookingsData];
+      const uniqueMap = new Map();
+
+      combined.forEach(b => {
+        const key = String(b.bookingID || b.bookingId || b.ticketNo || b.id);
+        if (!uniqueMap.has(key)) {
+          uniqueMap.set(key, {
+            ...b,
+            ticketCreated: b.ticketCreated || b.createdAt || new Date().toISOString(),
+            bookingAmountPaid: b.bookingAmountPaid || b.paidAmount || b.advanceAmount || 0,
+            formattedTicketDate: b.formattedTicketDate ||
+              (b.ticketCreated ? new Date(b.ticketCreated).toLocaleDateString('en-IN', {
+                day: '2-digit', month: 'short', year: 'numeric'
+              }) : 'N/A'),
+            formattedPickupDate: b.formattedPickupDate ||
+              (b.pickupDate ? new Date(b.pickupDate).toLocaleDateString('en-IN', {
+                day: '2-digit', month: 'short', year: 'numeric'
+              }) : 'N/A'),
+            paymentPercentage: b.totalAmount && (b.bookingAmountPaid || b.advanceAmount)
+              ? Math.round(((b.bookingAmountPaid || b.advanceAmount) / b.totalAmount) * 100)
+              : b.paymentStatus === 'Paid' ? 100 : 0
+          });
+        }
+      });
+
+      return Array.from(uniqueMap.values());
 
     } catch (error) {
       console.error('Error fetching recent bookings:', error);
@@ -523,7 +549,12 @@ const Dashboard = ({ userData }) => {
       setRecentBookings(bookings);
     }, 10000);
 
-    return () => clearInterval(interval);
+    window.addEventListener('booking-update', fetchDashboardData);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('booking-update', fetchDashboardData);
+    };
   }, []);
 
   const roleId = userData?.roleId;

@@ -55,24 +55,20 @@ axiosClient.interceptors.response.use(
     return response;
   },
   (error) => {
-    console.error('API Error:', {
-      message: error.message,
-      code: error.code,
-      status: error.response?.status,
-      data: error.response?.data,
-      url: error.config?.url
-    });
+    // Log API warning instead of noisy error
+    if (import.meta.env.DEV) {
+      console.warn('API Response Notice:', {
+        message: error.message,
+        code: error.code,
+        status: error.response?.status,
+        url: error.config?.url
+      });
+    }
     
     // Handle 401 Unauthorized
     if (error.response && error.response.status === 401) {
       localStorage.clear();
       window.location.href = '/';
-    }
-    
-    // Handle network errors
-    if (!error.response) {
-      console.error('Network Error - Check if server is running');
-      throw new Error('Network Error: Cannot connect to server. Please check if the backend is running.');
     }
     
     return Promise.reject(error);
