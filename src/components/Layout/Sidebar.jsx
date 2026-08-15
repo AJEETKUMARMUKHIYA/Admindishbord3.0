@@ -72,8 +72,8 @@ const Sidebar = ({
     { id: 'tickets', icon: Ticket, text: 'Tickets' },
     { id: 'bookingForm', icon: PlusCircle, text: 'Book Ticket' },
     { id: 'manageUserPage', icon: FolderEdit, text: 'Ticket Management' },
-    { id: 'ivr', icon: PhoneCall, text: 'IVR Dialer' },
-    { id: 'ivrCallHistory', icon: History, text: 'Call History Logs' },
+    // { id: 'ivr', icon: PhoneCall, text: 'IVR Dialer' },
+    // { id: 'ivrCallHistory', icon: History, text: 'Call History Logs' },
     { id: 'reports', icon: BarChart3, text: 'Reports' },
     { id: 'settings', icon: SettingsIcon, text: 'Settings' }
   ];

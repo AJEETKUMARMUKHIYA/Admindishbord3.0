@@ -115,7 +115,7 @@ const Supervisor = ({ supervisors = [], onRefresh }) => {
           lastName: newSupervisor.lastName,
           email: newSupervisor.email,
           mobile: newSupervisor.mobile,
-          password: newSupervisor.password || '123456',
+          password: newSupervisor.password,
           defaultAccountId: 1,
           roleId: 2, // Role 2 is Supervisor
           active: true
