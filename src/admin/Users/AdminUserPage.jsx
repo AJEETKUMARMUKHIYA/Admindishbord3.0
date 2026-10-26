@@ -371,15 +371,16 @@ const AdminUserPage = () => {
   const handleSaveUser = async (userData, isEdit) => {
     try {
       if (isEdit) {
-        // const response = await axios.put(
-        //   `https://localhost:7148/api/AdminUser/UpdateUser/${userData.userId}`,
-        //   { ...userData, updatedBy: 1, updatedDate: new Date().toISOString() }, // Add updatedBy and updatedDate
-        //   { headers: { "Content-Type": "application/json" } }
-        // );
-
-          const response = await axiosClient.put(
+        const payload = {
+          ...userData,
+          roleId: 1, // Admin entry roleId is strictly 1
+          defaultAccountId: userData.defaultAccountId || 1,
+          updatedBy: 1,
+          updatedDate: new Date().toISOString(),
+        };
+        const response = await axiosClient.put(
           `/AdminUser/UpdateUser/${userData.userId}`,
-          { ...userData, updatedBy: 1, updatedDate: new Date().toISOString() }, // Add updatedBy and updatedDate
+          payload,
           { headers: { "Content-Type": "application/json" } }
         );
         setUsers(users.map((user) => (user.userId === userData.userId ? response.data : user)));
@@ -389,16 +390,16 @@ const AdminUserPage = () => {
           severity: "success",
         });
       } else {
-        // const response = await axios.post(
-        //   "https://localhost:7148/api/AdminUser/CreateUser",
-        //   { ...userData, createdBy: 1, createdDate: new Date().toISOString() }, // Add createdBy and createdDate
-        //   { headers: { "Content-Type": "application/json" } }
-        // );
-
-
-         const response = await axiosClient.post(
+        const payload = {
+          ...userData,
+          roleId: 1, // Admin entry roleId is strictly 1
+          defaultAccountId: userData.defaultAccountId || 1,
+          createdBy: 1,
+          createdDate: new Date().toISOString(),
+        };
+        const response = await axiosClient.post(
           "/AdminUser/CreateUser",
-          { ...userData, createdBy: 1, createdDate: new Date().toISOString() }, // Add createdBy and createdDate
+          payload,
           { headers: { "Content-Type": "application/json" } }
         );
         setUsers([...users, response.data]);

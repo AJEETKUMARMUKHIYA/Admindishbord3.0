@@ -5,11 +5,20 @@ import {
   Phone, 
   Lock, 
   UserPlus, 
+  Check,
   ShieldAlert,
-  Info
+  Info,
+  RefreshCw
 } from 'lucide-react';
 
-const AddAdmin = ({ admin, onInputChange, onAddAdmin }) => {
+const AddAdmin = ({ admin, onInputChange, onAddAdmin, isEdit = false, submitting = false }) => {
+  const isFormValid = 
+    admin.firstName?.trim() &&
+    admin.lastName?.trim() &&
+    admin.mobile?.trim() &&
+    admin.email?.trim() &&
+    (isEdit || admin.password?.trim());
+
   return (
     <div id="addAdminContainer">
       <style>{`
@@ -183,6 +192,15 @@ const AddAdmin = ({ admin, onInputChange, onAddAdmin }) => {
           cursor: not-allowed;
         }
 
+        .spin-icon {
+          animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+
         /* Compliance Box */
         .compliance-box {
           background-color: #f8fafc;
@@ -206,14 +224,17 @@ const AddAdmin = ({ admin, onInputChange, onAddAdmin }) => {
       <div className="formal-eyebrow">
         <ShieldAlert size={12} /> ADMINISTRATIVE PROVISIONING ENGINE
       </div>
-      <h3 className="formal-title">Provision Administrative Account</h3>
+      <h3 className="formal-title">
+        {isEdit ? 'Update Administrative Account' : 'Provision Administrative Account'}
+      </h3>
       <p className="formal-subtitle">
-        Enter the operator credentials below to register a secure administrator profile. 
-        All fields are strictly required for validation and network security.
+        {isEdit 
+          ? 'Update the operator credentials below for this administrator profile. Role ID is assigned as Administrator (Role 1).'
+          : 'Enter the operator credentials below to register a secure administrator profile. All fields are strictly required for validation and network security.'}
       </p>
 
       {/* Form Fields */}
-      <form onSubmit={(e) => e.preventDefault()}>
+      <form onSubmit={(e) => { e.preventDefault(); if (isFormValid && !submitting) onAddAdmin(); }}>
         <div className="form-grid">
           
           {/* First Name */}
@@ -292,28 +313,51 @@ const AddAdmin = ({ admin, onInputChange, onAddAdmin }) => {
             </div>
           </div>
 
-          {/* Temporary Password */}
-          <div className="formal-field form-span-2">
-            <label htmlFor="password" className="formal-label">
-              Initial Security Password <span className="required">*</span>
-            </label>
-            <div className="input-wrapper">
-              <span className="input-icon"><Lock size={15} /></span>
-              <input
-                id="password"
-                type="password"
-                className="formal-input"
-                placeholder="Initialize a strong, unique password"
-                value={admin.password || ''}
-                onChange={onInputChange}
-                required
-              />
+          {/* Temporary Password (only when creating or optional on edit) */}
+          {!isEdit ? (
+            <div className="formal-field form-span-2">
+              <label htmlFor="password" className="formal-label">
+                Initial Security Password <span className="required">*</span>
+              </label>
+              <div className="input-wrapper">
+                <span className="input-icon"><Lock size={15} /></span>
+                <input
+                  id="password"
+                  type="password"
+                  className="formal-input"
+                  placeholder="Initialize a strong, unique password"
+                  value={admin.password || ''}
+                  onChange={onInputChange}
+                  required
+                />
+              </div>
+              <div className="field-hint">
+                <Info size={11} style={{ color: '#2563eb' }} />
+                <span>Provide at least 8 characters. The user is required to reset this credential upon first successful authentication.</span>
+              </div>
             </div>
-            <div className="field-hint">
-              <Info size={11} style={{ color: '#2563eb' }} />
-              <span>Provide at least 8 characters. The user is required to reset this credential upon first successful authentication.</span>
+          ) : (
+            <div className="formal-field form-span-2">
+              <label htmlFor="password" className="formal-label">
+                Update Password (Optional)
+              </label>
+              <div className="input-wrapper">
+                <span className="input-icon"><Lock size={15} /></span>
+                <input
+                  id="password"
+                  type="password"
+                  className="formal-input"
+                  placeholder="Leave blank to keep existing password"
+                  value={admin.password || ''}
+                  onChange={onInputChange}
+                />
+              </div>
+              <div className="field-hint">
+                <Info size={11} style={{ color: '#64748b' }} />
+                <span>Leave empty if you don't wish to change this administrator's password.</span>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Action and Compliance Row */}
@@ -321,7 +365,7 @@ const AddAdmin = ({ admin, onInputChange, onAddAdmin }) => {
           <div className="compliance-box">
             <Info size={16} style={{ color: '#475569', flexShrink: 0, marginTop: 1 }} />
             <p className="compliance-text">
-              By confirming this operation, you assign full read, write, and dispatch permissions on this workspace. Ensure you verify the identity and clearances of the operator prior to submission.
+              By confirming this operation, you assign full read, write, and dispatch permissions on this workspace with Role ID 1 (Administrator). Ensure you verify the identity and clearances of the operator prior to submission.
             </p>
           </div>
 
@@ -329,16 +373,24 @@ const AddAdmin = ({ admin, onInputChange, onAddAdmin }) => {
             type="button"
             className="btn-formal-primary"
             onClick={onAddAdmin}
-            disabled={
-              !admin.firstName?.trim() ||
-              !admin.lastName?.trim() ||
-              !admin.mobile?.trim() ||
-              !admin.email?.trim() ||
-              !admin.password?.trim()
-            }
+            disabled={!isFormValid || submitting}
           >
-            <UserPlus size={16} />
-            Provision Administrator Profile
+            {submitting ? (
+              <>
+                <RefreshCw size={16} className="spin-icon" />
+                <span>Processing...</span>
+              </>
+            ) : isEdit ? (
+              <>
+                <Check size={16} />
+                <span>Save Administrator Changes</span>
+              </>
+            ) : (
+              <>
+                <UserPlus size={16} />
+                <span>Provision Administrator Profile</span>
+              </>
+            )}
           </button>
         </div>
       </form>
@@ -347,3 +399,4 @@ const AddAdmin = ({ admin, onInputChange, onAddAdmin }) => {
 };
 
 export default AddAdmin;
+
