@@ -53,29 +53,28 @@ import {
   Check,
   Info,
   DollarSign,
-  UserPlus
+  UserPlus,
+  Globe,
+  Navigation,
+  ArrowRight
 } from "lucide-react";
 import AxiosClient from "../../AxiosClient";
 import { generateBookingConfirmationPDF } from "../../utils/generateBookingConfirmationPDF";
 import { checkAndCreateUser } from "../../utils/userService";
-
-const CITIES = [
-  "Bangalore",
-  "Chennai",
-  "Hyderabad",
-  "Mumbai",
-  "Pune",
-  "Kolkata",
-  "Delhi",
-  "Gurgaon",
-  "Noida",
-  "Ahmedabad"
-];
+import {
+  CITIES,
+  CITY_LOCALITIES,
+  ALL_INDIA_DESTINATIONS,
+  searchWithinCity,
+  searchBetweenCities,
+  estimateInterCityDistance
+} from "../../utils/indiaLocationData";
 
 export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
   // Tab / Move type
   const [activeTab, setActiveTab] = useState("within"); // "within" | "between"
   const [selectedCity, setSelectedCity] = useState("Bangalore");
+  const [destinationCity, setDestinationCity] = useState("Mumbai");
 
   // Active Scroll / Form Section Tracker
   const [activeStep, setActiveStep] = useState(1);
@@ -143,8 +142,12 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
     basePrice: 0,
     pickupFloorCharge: 0,
     dropFloorCharge: 0,
+    pickupLiftCharge: 0,
+    dropLiftCharge: 0,
     liftCharges: 0,
     parkingCharge: 0,
+    vanAccessCharge: 0,
+    totalExtraCharge: 0,
     totalPrice: 0
   });
 
@@ -317,21 +320,171 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
     }
   };
 
-  // Geoapify suggestion fetcher
-  const fetchAddressSuggestions = async (query, setSuggestions) => {
-    if (query.length < 3) return;
-    const searchQuery = `${query}, ${selectedCity}`;
-    const url = `https://api.geoapify.com/v1/geocode/autocomplete?text=${encodeURIComponent(
-      searchQuery
-    )}&limit=5&apiKey=6c4609acb64b46699389f4929be8af24`;
-
-    try {
-      const res = await fetch(url);
-      const data = await res.json();
-      setSuggestions(data.features || []);
-    } catch (err) {
-      console.error("Address fetch error:", err);
+  // Tab switching handler with automatic distance and scope adjustment
+  const handleSwitchTab = (newTab) => {
+    setActiveTab(newTab);
+    setToSuggestions([]);
+    if (newTab === "between") {
+      const dist = estimateInterCityDistance(selectedCity, destinationCity);
+      setDistance(dist);
+      showNotification(`Switched to Between Cities relocation. Search delivery across all of India.`, "info");
+    } else {
+      setDistance(15);
+      showNotification(`Switched to Within City relocation. Restricted to ${selectedCity} delivery.`, "info");
     }
+  };
+
+  // Pickup address suggestions strictly within selected operational city
+  const handleFetchFromSuggestions = (query) => {
+    setFromAddress(query);
+    if (!query || query.trim().length === 0) {
+      setFromSuggestions([]);
+      return;
+    }
+    const localMatches = searchWithinCity(selectedCity, query);
+    setFromSuggestions(localMatches);
+
+    // Online geocoder enhancement with city constraint
+    if (query.length >= 3) {
+      const searchQuery = `${query}, ${selectedCity}`;
+      fetch(
+        `https://api.geoapify.com/v1/geocode/autocomplete?text=${encodeURIComponent(
+          searchQuery
+        )}&limit=5&apiKey=6c4609acb64b46699389f4929be8af24`
+      )
+        .then((r) => r.json())
+        .then((data) => {
+          if (data?.features?.length > 0) {
+            const apiItems = data.features.map((f) => ({
+              title: f.properties?.formatted || f.properties?.address_line1,
+              city: f.properties?.city || selectedCity,
+              formatted: f.properties?.formatted || query,
+              isWithinCity: true
+            }));
+            setFromSuggestions((prev) => {
+              const combined = [...localMatches];
+              apiItems.forEach((item) => {
+                if (!combined.some((c) => c.formatted === item.formatted)) {
+                  combined.push(item);
+                }
+              });
+              return combined.slice(0, 8);
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  };
+
+  // Delivery address suggestions:
+  // - Within City: Search strictly within the chosen operational city
+  // - Between Cities: Search across ALL of India
+  const handleFetchToSuggestions = (query) => {
+    setToAddress(query);
+    if (!query || query.trim().length === 0) {
+      setToSuggestions([]);
+      return;
+    }
+
+    if (activeTab === "within") {
+      // WITHIN CITY: search ONLY inside selected operational city
+      const matches = searchWithinCity(selectedCity, query);
+      setToSuggestions(matches);
+
+      if (query.length >= 3) {
+        const searchQuery = `${query}, ${selectedCity}`;
+        fetch(
+          `https://api.geoapify.com/v1/geocode/autocomplete?text=${encodeURIComponent(
+            searchQuery
+          )}&limit=5&apiKey=6c4609acb64b46699389f4929be8af24`
+        )
+          .then((r) => r.json())
+          .then((data) => {
+            if (data?.features?.length > 0) {
+              const apiItems = data.features
+                .filter(
+                  (f) =>
+                    !f.properties?.city ||
+                    f.properties?.city.toLowerCase().includes(selectedCity.toLowerCase())
+                )
+                .map((f) => ({
+                  title: f.properties?.formatted || f.properties?.address_line1,
+                  city: selectedCity,
+                  formatted: f.properties?.formatted || query,
+                  isWithinCity: true
+                }));
+              setToSuggestions((prev) => {
+                const combined = [...matches];
+                apiItems.forEach((item) => {
+                  if (!combined.some((c) => c.formatted === item.formatted)) {
+                    combined.push(item);
+                  }
+                });
+                return combined.slice(0, 8);
+              });
+            }
+          })
+          .catch(() => {});
+      }
+    } else {
+      // BETWEEN CITIES: search across ALL of India!
+      const matches = searchBetweenCities(query, selectedCity);
+      setToSuggestions(matches);
+
+      if (query.length >= 3) {
+        const searchQuery = `${query}, India`;
+        fetch(
+          `https://api.geoapify.com/v1/geocode/autocomplete?text=${encodeURIComponent(
+            searchQuery
+          )}&filter=countrycode:in&limit=6&apiKey=6c4609acb64b46699389f4929be8af24`
+        )
+          .then((r) => r.json())
+          .then((data) => {
+            if (data?.features?.length > 0) {
+              const apiItems = data.features.map((f) => ({
+                title: f.properties?.formatted || f.properties?.address_line1,
+                city: f.properties?.city || f.properties?.county || "India",
+                state: f.properties?.state || "India",
+                formatted: f.properties?.formatted || query,
+                isBetweenCities: true
+              }));
+              setToSuggestions((prev) => {
+                const combined = [...matches];
+                apiItems.forEach((item) => {
+                  if (!combined.some((c) => c.formatted === item.formatted)) {
+                    combined.push(item);
+                  }
+                });
+                return combined.slice(0, 10);
+              });
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  };
+
+  // Handler for selecting a delivery address
+  const handleSelectDeliveryAddress = (addrItem) => {
+    const formatted = typeof addrItem === "string" ? addrItem : addrItem.formatted || addrItem.title;
+    setToAddress(formatted);
+    setToSuggestions([]);
+
+    if (activeTab === "between") {
+      const estimatedDist = estimateInterCityDistance(selectedCity, formatted);
+      setDistance(estimatedDist);
+      showNotification(`Delivery set to ${formatted}. Route distance estimated at ${estimatedDist} km.`, "info");
+    } else {
+      showNotification(`Delivery location set within ${selectedCity}: ${formatted}`, "success");
+    }
+  };
+
+  // Handler for selecting a pickup address
+  const handleSelectPickupAddress = (addrItem) => {
+    const formatted = typeof addrItem === "string" ? addrItem : addrItem.formatted || addrItem.title;
+    setFromAddress(formatted);
+    setFromSuggestions([]);
+    showNotification(`Pickup location set: ${formatted}`, "info");
   };
 
   // User Lookup / Auto creation
@@ -362,6 +515,45 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
     }
   };
 
+  /* ======================
+     PRICE CONFIG & FORMULAS
+  ====================== */
+  const FLOOR_PRICE = 200;
+  const LIFT_NOT_AVAILABLE_PRICE = 500;
+
+  const calculateExtraCharge = (dist) => {
+    if (!dist) return 0;
+    return (dist / 50) * 200;
+  };
+
+  // Function to get floor charge when lift NOT available
+  function getFloorCharge(cftTotal, floorVal) {
+    const floor = parseInt(floorVal, 10) || 0;
+    const priceTable = {
+      2: { small: 1500, medium: 2000, large: 3000 },
+      3: { small: 2500, medium: 3500, large: 4000 },
+      4: { small: 3000, medium: 4000, large: 4500 },
+      5: { small: 4000, medium: 5000, large: 5500 }
+    };
+
+    let slab;
+    if (cftTotal <= 300) slab = "small";
+    else if (cftTotal <= 800) slab = "medium";
+    else slab = "large";
+
+    if (floor >= 2 && floor <= 5) {
+      return priceTable[floor][slab];
+    }
+
+    if (floor > 5) {
+      const basePrice = priceTable[5][slab];
+      const extraFloors = floor - 5;
+      return basePrice + extraFloors * 1000;
+    }
+
+    return 0;
+  }
+
   // Dynamic Price Calculation Call
   const handleCalculatePrice = useCallback(async () => {
     if (totalCFT <= 0) {
@@ -371,8 +563,12 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
         basePrice: 0,
         pickupFloorCharge: 0,
         dropFloorCharge: 0,
+        pickupLiftCharge: 0,
+        dropLiftCharge: 0,
         liftCharges: 0,
         parkingCharge: 0,
+        vanAccessCharge: 0,
+        totalExtraCharge: 0,
         totalPrice: 0
       });
       return;
@@ -396,23 +592,59 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
 
       const pfNum = parseInt(pickupFloor, 10) || 0;
       const dfNum = parseInt(dropFloor, 10) || 0;
-      const pFloorCharge = serviceLift === "no" ? pfNum * 200 : 0;
-      const dFloorCharge = serviceLiftdrop === "no" ? dfNum * 200 : 0;
+      const rDist = parseInt(roadDistance, 10) || 0;
 
-      const pLiftCharge = serviceLift === "no" ? 500 : 0;
-      const dLiftCharge = serviceLiftdrop === "no" ? 500 : 0;
+      /* -------------------------
+         Pickup Floor Charge
+      -------------------------- */
+      const pFloorCharge =
+        serviceLift === "yes"
+          ? pfNum > 0
+            ? pfNum * FLOOR_PRICE
+            : 0
+          : getFloorCharge(cft, pfNum);
+
+      /* -------------------------
+         Drop Floor Charge
+      -------------------------- */
+      const dFloorCharge =
+        serviceLiftdrop === "yes"
+          ? dfNum > 0
+            ? dfNum * FLOOR_PRICE
+            : 0
+          : getFloorCharge(cft, dfNum);
+
+      /* -------------------------
+         Lift Not Available Charge
+      -------------------------- */
+      const pLiftCharge = serviceLift === "no" ? LIFT_NOT_AVAILABLE_PRICE : 0;
+      const dLiftCharge = serviceLiftdrop === "no" ? LIFT_NOT_AVAILABLE_PRICE : 0;
       const totalLiftCharge = pLiftCharge + dLiftCharge;
 
-      const parkCharge = vanAccessible === "no" ? 500 : 0;
+      /* -------------------------
+         Van / Parking Distance Charge
+      -------------------------- */
+      const vanAccessCharge =
+        vanAccessible === "no" ? calculateExtraCharge(rDist) : 0;
 
-      const grandTotal = base + pFloorCharge + dFloorCharge + totalLiftCharge + parkCharge;
+      /* -------------------------
+         Total Extra Charges & Final Price
+      -------------------------- */
+      const totalExtra =
+        pFloorCharge + dFloorCharge + pLiftCharge + dLiftCharge + vanAccessCharge;
+
+      const grandTotal = Math.round(base + totalExtra);
 
       setPriceBreakdown({
         basePrice: base,
         pickupFloorCharge: pFloorCharge,
         dropFloorCharge: dFloorCharge,
+        pickupLiftCharge: pLiftCharge,
+        dropLiftCharge: dLiftCharge,
         liftCharges: totalLiftCharge,
-        parkingCharge: parkCharge,
+        parkingCharge: vanAccessCharge,
+        vanAccessCharge: vanAccessCharge,
+        totalExtraCharge: totalExtra,
         totalPrice: grandTotal
       });
 
@@ -965,31 +1197,115 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
                   <Box sx={{ background: "#f1f5f9", p: 0.5, borderRadius: 2.5, display: "flex", gap: 0.5 }}>
                     <Button
                       size="small"
-                      onClick={() => setActiveTab("within")}
+                      onClick={() => handleSwitchTab("within")}
                       variant={activeTab === "within" ? "contained" : "text"}
-                      sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2, fontSize: "12px", px: 2 }}
+                      startIcon={<MapPin size={16} />}
+                      sx={{
+                        textTransform: "none",
+                        fontWeight: 700,
+                        borderRadius: 2,
+                        fontSize: "13px",
+                        px: 2,
+                        py: 0.8,
+                        background: activeTab === "within" ? "#2563eb" : "transparent",
+                        color: activeTab === "within" ? "#ffffff" : "#475569",
+                        boxShadow: activeTab === "within" ? "0 2px 8px rgba(37,99,235,0.25)" : "none"
+                      }}
                     >
                       Within City
                     </Button>
                     <Button
                       size="small"
-                      onClick={() => setActiveTab("between")}
+                      onClick={() => handleSwitchTab("between")}
                       variant={activeTab === "between" ? "contained" : "text"}
-                      sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2, fontSize: "12px", px: 2 }}
+                      startIcon={<Globe size={16} />}
+                      sx={{
+                        textTransform: "none",
+                        fontWeight: 700,
+                        borderRadius: 2,
+                        fontSize: "13px",
+                        px: 2,
+                        py: 0.8,
+                        background: activeTab === "between" ? "#0f766e" : "transparent",
+                        color: activeTab === "between" ? "#ffffff" : "#475569",
+                        boxShadow: activeTab === "between" ? "0 2px 8px rgba(15,118,110,0.25)" : "none"
+                      }}
                     >
                       Between Cities
                     </Button>
                   </Box>
                 </Box>
 
+                {/* Relocation Mode Banner */}
+                <Box
+                  sx={{
+                    mb: 2.5,
+                    p: 1.8,
+                    borderRadius: 2.5,
+                    background: activeTab === "within" ? "#eff6ff" : "#f0fdfa",
+                    border: activeTab === "within" ? "1px solid #bfdbfe" : "1px solid #99f6e4",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    flexWrap: "wrap",
+                    gap: 1.5
+                  }}
+                >
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1.2 }}>
+                    <Box
+                      sx={{
+                        p: 0.8,
+                        borderRadius: "50%",
+                        background: activeTab === "within" ? "#dbeafe" : "#ccfbf1",
+                        color: activeTab === "within" ? "#1d4ed8" : "#0f766e",
+                        display: "flex"
+                      }}
+                    >
+                      {activeTab === "within" ? <MapPin size={18} /> : <Globe size={18} />}
+                    </Box>
+                    <Box>
+                      <Typography variant="subtitle2" fontWeight={800} color={activeTab === "within" ? "#1e40af" : "#115e59"}>
+                        {activeTab === "within"
+                          ? `Within City Mode: Delivery strictly restricted to ${selectedCity}`
+                          : `Between Cities Mode: Search & select delivery location across all of India`}
+                      </Typography>
+                      <Typography variant="caption" color={activeTab === "within" ? "#3b82f6" : "#0d9488"}>
+                        {activeTab === "within"
+                          ? `Local intra-city move within ${selectedCity} city limits and surrounding suburbs.`
+                          : `Inter-state / inter-city relocation from ${selectedCity} to anywhere in India with automatic highway distance & rate calculation.`}
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  <Chip
+                    size="small"
+                    label={activeTab === "within" ? `📍 ${selectedCity} Only` : "🇮🇳 Pan-India Enabled"}
+                    sx={{
+                      fontWeight: 800,
+                      background: activeTab === "within" ? "#1d4ed8" : "#0f766e",
+                      color: "#ffffff"
+                    }}
+                  />
+                </Box>
+
                 <Grid container spacing={2}>
-                  <Grid item xs={12} sm={4}>
+                  {/* Origin Operational City */}
+                  <Grid item xs={12} sm={activeTab === "between" ? 3 : 4}>
                     <FormControl fullWidth sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2.5 } }}>
-                      <InputLabel>Select Operational City</InputLabel>
+                      <InputLabel>{activeTab === "between" ? "Origin City (From)" : "Operational City"}</InputLabel>
                       <Select
                         value={selectedCity}
-                        label="Select Operational City"
-                        onChange={(e) => setSelectedCity(e.target.value)}
+                        label={activeTab === "between" ? "Origin City (From)" : "Operational City"}
+                        onChange={(e) => {
+                          const newOrigin = e.target.value;
+                          setSelectedCity(newOrigin);
+                          if (activeTab === "between") {
+                            const newDist = estimateInterCityDistance(newOrigin, destinationCity);
+                            setDistance(newDist);
+                          }
+                          setFromSuggestions([]);
+                          setToSuggestions([]);
+                        }}
                       >
                         {CITIES.map((c) => (
                           <MenuItem key={c} value={c}>
@@ -1000,7 +1316,35 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
                     </FormControl>
                   </Grid>
 
-                  <Grid item xs={12} sm={4}>
+                  {/* Destination City (Visible in Between Cities Mode) */}
+                  {activeTab === "between" && (
+                    <Grid item xs={12} sm={3}>
+                      <FormControl fullWidth sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2.5 } }}>
+                        <InputLabel>Destination City (To)</InputLabel>
+                        <Select
+                          value={destinationCity}
+                          label="Destination City (To)"
+                          onChange={(e) => {
+                            const newDest = e.target.value;
+                            setDestinationCity(newDest);
+                            const newDist = estimateInterCityDistance(selectedCity, newDest);
+                            setDistance(newDist);
+                            setToAddress(`${newDest}, India`);
+                            showNotification(`Destination set to ${newDest}. Distance estimated at ${newDist} km.`, "info");
+                          }}
+                        >
+                          {CITIES.filter((c) => c !== selectedCity).map((c) => (
+                            <MenuItem key={c} value={c}>
+                              {c}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                  )}
+
+                  {/* Shifting Date */}
+                  <Grid item xs={12} sm={activeTab === "between" ? 3 : 4}>
                     <TextField
                       fullWidth
                       type="date"
@@ -1019,7 +1363,8 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
                     />
                   </Grid>
 
-                  <Grid item xs={12} sm={4}>
+                  {/* Time Slot */}
+                  <Grid item xs={12} sm={activeTab === "between" ? 3 : 4}>
                     <FormControl fullWidth sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2.5 } }}>
                       <InputLabel>Preferred Time Slot *</InputLabel>
                       <Select
@@ -1037,17 +1382,13 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
                   </Grid>
 
                   {/* Pickup Address */}
-                  <Grid item xs={12} sm={6} sx={{ position: "relative" }}>
+                  <Grid item xs={12} md={6} sx={{ position: "relative" }}>
                     <TextField
                       fullWidth
-                      label="Pickup Address (From) *"
-                      placeholder="Type area, apartment or landmark..."
+                      label={`Pickup Address (From ${selectedCity}) *`}
+                      placeholder={`Type area, building or street in ${selectedCity}...`}
                       value={fromAddress}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setFromAddress(val);
-                        fetchAddressSuggestions(val, setFromSuggestions);
-                      }}
+                      onChange={(e) => handleFetchFromSuggestions(e.target.value)}
                       InputProps={{
                         startAdornment: (
                           <InputAdornment position="start">
@@ -1057,16 +1398,40 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
                       }}
                       sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2.5 } }}
                     />
+
+                    {/* Quick Suggestions for Pickup City */}
+                    <Box sx={{ mt: 1, display: "flex", flexWrap: "wrap", gap: 0.6, alignItems: "center" }}>
+                      <Typography variant="caption" color="#64748b" fontWeight={700}>
+                        Quick {selectedCity} Areas:
+                      </Typography>
+                      {(CITY_LOCALITIES[selectedCity] || CITY_LOCALITIES["Bangalore"] || [])
+                        .slice(0, 4)
+                        .map((loc) => (
+                          <Chip
+                            key={loc.name}
+                            size="small"
+                            label={loc.area || loc.name}
+                            onClick={() => handleSelectPickupAddress(`${loc.name}, ${selectedCity} - ${loc.pincode}`)}
+                            sx={{
+                              fontSize: "11px",
+                              cursor: "pointer",
+                              background: "#f1f5f9",
+                              "&:hover": { background: "#e2e8f0" }
+                            }}
+                          />
+                        ))}
+                    </Box>
+
                     {fromSuggestions.length > 0 && (
                       <Paper
-                        elevation={4}
+                        elevation={6}
                         sx={{
                           position: "absolute",
                           top: "100%",
                           left: 16,
                           right: 16,
-                          zIndex: 20,
-                          maxHeight: 200,
+                          zIndex: 30,
+                          maxHeight: 220,
                           overflowY: "auto",
                           borderRadius: 2.5,
                           mt: 0.5,
@@ -1075,83 +1440,263 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
                       >
                         {fromSuggestions.map((s, idx) => (
                           <Box
-                            key={s.properties?.place_id || `from-${idx}`}
-                            onClick={() => {
-                              setFromAddress(s.properties?.formatted || "");
-                              setFromSuggestions([]);
-                            }}
+                            key={idx}
+                            onClick={() => handleSelectPickupAddress(s)}
                             sx={{
-                              p: 1.5,
+                              p: 1.4,
                               cursor: "pointer",
                               fontSize: "13px",
-                              "&:hover": { background: "#f1f5f9" },
-                              borderBottom: "1px solid #f1f5f9"
+                              "&:hover": { background: "#fff7ed" },
+                              borderBottom: "1px solid #f1f5f9",
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center"
                             }}
                           >
-                            {s.properties?.formatted}
+                            <Box>
+                              <Typography variant="body2" fontWeight={700} color="#0f172a">
+                                {s.title || s.formatted}
+                              </Typography>
+                              {s.landmark && (
+                                <Typography variant="caption" color="#64748b">
+                                  {s.landmark} • PIN: {s.pincode}
+                                </Typography>
+                              )}
+                            </Box>
+                            <Chip size="small" label={selectedCity} sx={{ fontSize: "10px", height: "20px" }} />
                           </Box>
                         ))}
                       </Paper>
                     )}
                   </Grid>
 
-                  {/* Delivery Address */}
-                  <Grid item xs={12} sm={6} sx={{ position: "relative" }}>
+                  {/* Delivery Address (To) */}
+                  <Grid item xs={12} md={6} sx={{ position: "relative" }}>
                     <TextField
                       fullWidth
-                      label="Delivery Address (To) *"
-                      placeholder="Type destination area or building..."
+                      label={
+                        activeTab === "within"
+                          ? `Delivery Address (Within ${selectedCity} Only) *`
+                          : "Delivery Address (Anywhere Across All of India) *"
+                      }
+                      placeholder={
+                        activeTab === "within"
+                          ? `Search destination area or apartment in ${selectedCity}...`
+                          : "Search any city, suburb, landmark or PIN code in India (e.g. Bandra Mumbai, Connaught Place Delhi)..."
+                      }
                       value={toAddress}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setToAddress(val);
-                        fetchAddressSuggestions(val, setToSuggestions);
-                      }}
+                      onChange={(e) => handleFetchToSuggestions(e.target.value)}
                       InputProps={{
                         startAdornment: (
                           <InputAdornment position="start">
-                            <MapPin size={18} color="#16a34a" />
+                            {activeTab === "within" ? (
+                              <MapPin size={18} color="#16a34a" />
+                            ) : (
+                              <Globe size={18} color="#0f766e" />
+                            )}
+                          </InputAdornment>
+                        ),
+                        endAdornment: (
+                          <InputAdornment position="end">
+                            <Chip
+                              size="small"
+                              label={activeTab === "within" ? selectedCity : "All India"}
+                              sx={{
+                                fontSize: "11px",
+                                fontWeight: 700,
+                                background: activeTab === "within" ? "#dcfce7" : "#ccfbf1",
+                                color: activeTab === "within" ? "#166534" : "#0f766e"
+                              }}
+                            />
                           </InputAdornment>
                         )
                       }}
                       sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2.5 } }}
                     />
+
+                    {/* Quick suggestions row below input based on mode */}
+                    {activeTab === "within" ? (
+                      /* WITHIN CITY: Show popular areas strictly within chosen city */
+                      <Box sx={{ mt: 1, display: "flex", flexWrap: "wrap", gap: 0.6, alignItems: "center" }}>
+                        <Typography variant="caption" color="#64748b" fontWeight={700}>
+                          Popular {selectedCity} Drop Points:
+                        </Typography>
+                        {(CITY_LOCALITIES[selectedCity] || CITY_LOCALITIES["Bangalore"] || [])
+                          .slice(0, 5)
+                          .map((loc) => (
+                            <Chip
+                              key={loc.name}
+                              size="small"
+                              label={loc.area || loc.name}
+                              onClick={() => handleSelectDeliveryAddress(`${loc.name}, ${selectedCity} - ${loc.pincode}`)}
+                              sx={{
+                                fontSize: "11px",
+                                cursor: "pointer",
+                                background: "#f0fdf4",
+                                color: "#166534",
+                                border: "1px solid #bbf7d0",
+                                "&:hover": { background: "#dcfce7" }
+                              }}
+                            />
+                          ))}
+                      </Box>
+                    ) : (
+                      /* BETWEEN CITIES: Show popular All-India Destination Hubs */
+                      <Box sx={{ mt: 1, display: "flex", flexWrap: "wrap", gap: 0.6, alignItems: "center" }}>
+                        <Typography variant="caption" color="#0f766e" fontWeight={700}>
+                          Popular India Destinations:
+                        </Typography>
+                        {[
+                          { city: "Mumbai", state: "MH", area: "Bandra West" },
+                          { city: "Delhi NCR", state: "DL", area: "Connaught Place" },
+                          { city: "Pune", state: "MH", area: "Hinjewadi" },
+                          { city: "Hyderabad", state: "TS", area: "Hitec City" },
+                          { city: "Chennai", state: "TN", area: "OMR" },
+                          { city: "Kolkata", state: "WB", area: "Salt Lake" },
+                          { city: "Jaipur", state: "RJ", area: "Malviya Nagar" },
+                          { city: "Ahmedabad", state: "GJ", area: "SG Highway" }
+                        ]
+                          .filter((d) => d.city !== selectedCity)
+                          .slice(0, 6)
+                          .map((dest) => (
+                            <Chip
+                              key={dest.city}
+                              size="small"
+                              label={`${dest.city} (${dest.state})`}
+                              onClick={() => {
+                                setDestinationCity(dest.city);
+                                handleSelectDeliveryAddress(`${dest.area}, ${dest.city}, India`);
+                              }}
+                              sx={{
+                                fontSize: "11px",
+                                cursor: "pointer",
+                                background: "#f0fdfa",
+                                color: "#0f766e",
+                                border: "1px solid #99f6e4",
+                                "&:hover": { background: "#ccfbf1" }
+                              }}
+                            />
+                          ))}
+                      </Box>
+                    )}
+
+                    {/* Delivery Address Suggestions Dropdown */}
                     {toSuggestions.length > 0 && (
                       <Paper
-                        elevation={4}
+                        elevation={6}
                         sx={{
                           position: "absolute",
                           top: "100%",
                           left: 16,
                           right: 16,
-                          zIndex: 20,
-                          maxHeight: 200,
+                          zIndex: 30,
+                          maxHeight: 250,
                           overflowY: "auto",
                           borderRadius: 2.5,
                           mt: 0.5,
                           border: "1px solid #cbd5e1"
                         }}
                       >
+                        <Box sx={{ p: 1, background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+                          <Typography variant="caption" fontWeight={700} color="#475569">
+                            {activeTab === "within"
+                              ? `Matching Localities in ${selectedCity}:`
+                              : `Matching Nationwide Destinations across India:`}
+                          </Typography>
+                        </Box>
+
                         {toSuggestions.map((s, idx) => (
                           <Box
-                            key={s.properties?.place_id || `to-${idx}`}
-                            onClick={() => {
-                              setToAddress(s.properties?.formatted || "");
-                              setToSuggestions([]);
-                            }}
+                            key={idx}
+                            onClick={() => handleSelectDeliveryAddress(s)}
                             sx={{
-                              p: 1.5,
+                              p: 1.4,
                               cursor: "pointer",
                               fontSize: "13px",
-                              "&:hover": { background: "#f1f5f9" },
-                              borderBottom: "1px solid #f1f5f9"
+                              "&:hover": {
+                                background: activeTab === "within" ? "#f0fdf4" : "#f0fdfa"
+                              },
+                              borderBottom: "1px solid #f1f5f9",
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center"
                             }}
                           >
-                            {s.properties?.formatted}
+                            <Box sx={{ pr: 1.5 }}>
+                              <Typography variant="body2" fontWeight={700} color="#0f172a">
+                                {s.title || s.formatted}
+                              </Typography>
+                              <Typography variant="caption" color="#64748b">
+                                {s.formatted}
+                              </Typography>
+                            </Box>
+                            <Box sx={{ textAlign: "right", flexShrink: 0 }}>
+                              <Chip
+                                size="small"
+                                label={s.city || (activeTab === "within" ? selectedCity : "India")}
+                                sx={{
+                                  fontSize: "10px",
+                                  height: "22px",
+                                  fontWeight: 700,
+                                  background: activeTab === "within" ? "#dcfce7" : "#ccfbf1",
+                                  color: activeTab === "within" ? "#166534" : "#0f766e"
+                                }}
+                              />
+                              {activeTab === "between" && (
+                                <Typography variant="caption" display="block" color="#0f766e" fontWeight={700} sx={{ mt: 0.3 }}>
+                                  ~{estimateInterCityDistance(selectedCity, s.formatted || s.city)} KM
+                                </Typography>
+                              )}
+                            </Box>
                           </Box>
                         ))}
                       </Paper>
                     )}
+                  </Grid>
+
+                  {/* Route Distance indicator & adjustment */}
+                  <Grid item xs={12}>
+                    <Box
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 2,
+                        background: "#f8fafc",
+                        border: "1px dashed #cbd5e1",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        flexWrap: "wrap",
+                        gap: 1.5
+                      }}
+                    >
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                        <Truck size={18} color="#2563eb" />
+                        <Typography variant="body2" color="#334155" fontWeight={600}>
+                          {activeTab === "within"
+                            ? `Estimated Local Move Distance within ${selectedCity}:`
+                            : `Estimated Highway Inter-City Distance (${selectedCity} ➔ ${toAddress || destinationCity}):`}
+                        </Typography>
+                        <Chip
+                          label={`${distance} KM`}
+                          color={activeTab === "within" ? "primary" : "success"}
+                          size="small"
+                          sx={{ fontWeight: 800 }}
+                        />
+                      </Box>
+
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                        <Typography variant="caption" color="#64748b">
+                          Adjust Distance (KM):
+                        </Typography>
+                        <TextField
+                          size="small"
+                          type="number"
+                          value={distance}
+                          onChange={(e) => setDistance(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                          sx={{ width: 90, "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+                        />
+                      </Box>
+                    </Box>
                   </Grid>
                 </Grid>
               </Paper>
@@ -1605,6 +2150,28 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
                   </Box>
                 </Box>
 
+                {/* Rate Config Pill */}
+                <Box
+                  sx={{
+                    mb: 2.5,
+                    p: 1.5,
+                    borderRadius: 2,
+                    background: "#f8fafc",
+                    border: "1px dashed #cbd5e1",
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 1,
+                    alignItems: "center"
+                  }}
+                >
+                  <Typography variant="caption" fontWeight={700} color="#475569">
+                    Configured Service Rates:
+                  </Typography>
+                  <Chip size="small" label="Lift: ₹200 / floor" sx={{ fontSize: "0.75rem", background: "#ecfdf5", color: "#047857" }} />
+                  <Chip size="small" label="Stairs Only: Slab rate by CFT + ₹500 fee" sx={{ fontSize: "0.75rem", background: "#fef3c7", color: "#b45309" }} />
+                  <Chip size="small" label="Van Walk: ₹200 per 50m" sx={{ fontSize: "0.75rem", background: "#f1f5f9", color: "#334155" }} />
+                </Box>
+
                 <Grid container spacing={2}>
                   <Grid item xs={12} sm={6}>
                     <FormControl fullWidth sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2.5 } }}>
@@ -1615,7 +2182,7 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
                         onChange={(e) => setServiceLift(e.target.value)}
                       >
                         <MenuItem value="yes">Yes - Lift Available</MenuItem>
-                        <MenuItem value="no">No - Stairs Only</MenuItem>
+                        <MenuItem value="no">No - Stairs Only (+₹500)</MenuItem>
                       </Select>
                     </FormControl>
                   </Grid>
@@ -1627,6 +2194,7 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
                       label="Pickup Floor Number"
                       value={pickupFloor}
                       onChange={(e) => setPickupFloor(e.target.value)}
+                      helperText={serviceLift === "yes" ? "₹200 per floor" : "CFT slab tiered pricing"}
                       sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2.5 } }}
                     />
                   </Grid>
@@ -1640,7 +2208,7 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
                         onChange={(e) => setServiceLiftdrop(e.target.value)}
                       >
                         <MenuItem value="yes">Yes - Lift Available</MenuItem>
-                        <MenuItem value="no">No - Stairs Only</MenuItem>
+                        <MenuItem value="no">No - Stairs Only (+₹500)</MenuItem>
                       </Select>
                     </FormControl>
                   </Grid>
@@ -1652,6 +2220,7 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
                       label="Delivery Floor Number"
                       value={dropFloor}
                       onChange={(e) => setDropFloor(e.target.value)}
+                      helperText={serviceLiftdrop === "yes" ? "₹200 per floor" : "CFT slab tiered pricing"}
                       sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2.5 } }}
                     />
                   </Grid>
@@ -1665,7 +2234,7 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
                         onChange={(e) => setVanAccessible(e.target.value)}
                       >
                         <MenuItem value="yes">Yes - Direct Door Access</MenuItem>
-                        <MenuItem value="no">No - Long Walk Required</MenuItem>
+                        <MenuItem value="no">No - Distance Walk Required</MenuItem>
                       </Select>
                     </FormControl>
                   </Grid>
@@ -1677,6 +2246,7 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
                       label="Walk Distance to Door (Meters)"
                       value={roadDistance}
                       onChange={(e) => setRoadDistance(e.target.value)}
+                      helperText={vanAccessible === "no" ? "₹200 per 50 meters distance" : "Vehicle parks at entrance"}
                       sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2.5 } }}
                     />
                   </Grid>
@@ -1749,7 +2319,7 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
                       {priceBreakdown.pickupFloorCharge > 0 && (
                         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                           <Typography variant="caption" color="#64748b">
-                            Pickup Floor Charge ({pickupFloor} Floors):
+                            Pickup Floor Charge ({pickupFloor} Flr, {serviceLift === "yes" ? "Lift" : "No Lift"}):
                           </Typography>
                           <Typography variant="body2" fontWeight={700} color="#0f172a">
                             +₹{priceBreakdown.pickupFloorCharge}
@@ -1757,10 +2327,21 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
                         </Box>
                       )}
 
+                      {priceBreakdown.pickupLiftCharge > 0 && (
+                        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <Typography variant="caption" color="#b45309">
+                            Pickup Lift Unavailable Fee:
+                          </Typography>
+                          <Typography variant="body2" fontWeight={700} color="#b45309">
+                            +₹{priceBreakdown.pickupLiftCharge}
+                          </Typography>
+                        </Box>
+                      )}
+
                       {priceBreakdown.dropFloorCharge > 0 && (
                         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                           <Typography variant="caption" color="#64748b">
-                            Drop Floor Charge ({dropFloor} Floors):
+                            Drop Floor Charge ({dropFloor} Flr, {serviceLiftdrop === "yes" ? "Lift" : "No Lift"}):
                           </Typography>
                           <Typography variant="body2" fontWeight={700} color="#0f172a">
                             +₹{priceBreakdown.dropFloorCharge}
@@ -1768,13 +2349,13 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
                         </Box>
                       )}
 
-                      {priceBreakdown.liftCharges > 0 && (
+                      {priceBreakdown.dropLiftCharge > 0 && (
                         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <Typography variant="caption" color="#64748b">
-                            Stairs Handling Fee:
+                          <Typography variant="caption" color="#b45309">
+                            Delivery Lift Unavailable Fee:
                           </Typography>
-                          <Typography variant="body2" fontWeight={700} color="#0f172a">
-                            +₹{priceBreakdown.liftCharges}
+                          <Typography variant="body2" fontWeight={700} color="#b45309">
+                            +₹{priceBreakdown.dropLiftCharge}
                           </Typography>
                         </Box>
                       )}
@@ -1782,10 +2363,32 @@ export default function BypassTicketCreation({ onBookingCreated, onNavigate }) {
                       {priceBreakdown.parkingCharge > 0 && (
                         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                           <Typography variant="caption" color="#64748b">
-                            Walk Distance Charge ({roadDistance}m):
+                            Van Walk Distance Charge ({roadDistance}m):
                           </Typography>
                           <Typography variant="body2" fontWeight={700} color="#0f172a">
                             +₹{priceBreakdown.parkingCharge}
+                          </Typography>
+                        </Box>
+                      )}
+
+                      {priceBreakdown.totalExtraCharge > 0 && (
+                        <Box
+                          sx={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            background: "#fffbeb",
+                            px: 1,
+                            py: 0.5,
+                            borderRadius: 1.5,
+                            border: "1px solid #fef3c7"
+                          }}
+                        >
+                          <Typography variant="caption" fontWeight={700} color="#92400e">
+                            Total Extra Services Charges:
+                          </Typography>
+                          <Typography variant="caption" fontWeight={800} color="#92400e">
+                            +₹{priceBreakdown.totalExtraCharge}
                           </Typography>
                         </Box>
                       )}
