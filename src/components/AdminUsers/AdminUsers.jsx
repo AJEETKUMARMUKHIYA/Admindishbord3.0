@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import AddAdmin from './AddAdmin';
+import axiosClient from '../../AxiosClient';
+import { showToast } from '../ToastNotification';
 import {
   RefreshCw,
   FileDown,
@@ -17,6 +19,8 @@ import {
   Inbox,
   ChevronLeft,
   ChevronRight,
+  UserCheck,
+  UserX,
 } from 'lucide-react';
 
 import { format } from 'date-fns';
@@ -24,72 +28,139 @@ const PAGE_SIZE = 10;
 
 const initials = (first, last) => `${(first || '?')[0]}${(last || '?')[0]}`.toUpperCase();
 
-function Toast({ toast }) {
-  if (!toast) return null;
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        bottom: 24,
-        left: '50%',
-        transform: 'translateX(-50%)',
-        background: 'var(--ink)',
-        color: '#fff',
-        padding: '12px 20px',
-        borderRadius: 10,
-        fontFamily: 'Inter, sans-serif',
-        fontSize: 14,
-        fontWeight: 500,
-        boxShadow: '0 12px 32px rgba(18,21,28,0.28)',
-        zIndex: 100,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        letterSpacing: 0.1,
-      }}
-    >
-      <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-bright)', flexShrink: 0 }} />
-      {toast}
-    </div>
-  );
-}
-
-const AdminUsers = ({ adminUsers, onRefresh, onAddAdmin, onEditAdmin, onDeleteAdmin }) => {
+const AdminUsers = ({ adminUsers = [], onRefresh }) => {
   const users = adminUsers || [];
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRole, setFilterRole] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [panelOpen, setPanelOpen] = useState(false);
-  const [toast, setToast] = useState(null);
-  const [newAdmin, setNewAdmin] = useState({ firstName: '', lastName: '', mobile: '', email: '' });
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [newAdmin, setNewAdmin] = useState({
+    userId: null,
+    firstName: '',
+    lastName: '',
+    mobile: '',
+    email: '',
+    password: '',
+  });
   const [currentPage, setCurrentPage] = useState(1);
 
   // Whenever the visible set changes shape (search/filter), snap back to page 1
-  // so the user isn't stranded on a page that no longer has any rows.
   const setFilterAndResetPage = (setter) => (value) => {
     setter(value);
     setCurrentPage(1);
   };
 
-  const flashToast = (msg) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 2600);
+  const handleOpenAdd = () => {
+    setNewAdmin({
+      userId: null,
+      firstName: '',
+      lastName: '',
+      mobile: '',
+      email: '',
+      password: '',
+    });
+    setIsEditMode(false);
+    setPanelOpen(true);
+  };
+
+  const handleOpenEdit = (user) => {
+    setNewAdmin({
+      userId: user.userId,
+      firstName: user.firstName || '',
+      lastName: user.lastName || '',
+      mobile: user.mobile || '',
+      email: user.email || '',
+      password: '', // Don't pre-populate passwords
+    });
+    setIsEditMode(true);
+    setPanelOpen(true);
   };
 
   const handleInputChange = (e) => {
-    setNewAdmin({ ...newAdmin, [e.target.id]: e.target.value });
+    const { id, value } = e.target;
+    setNewAdmin((prev) => ({
+      ...prev,
+      [id]: value,
+    }));
   };
 
-  const handleAddAdmin = () => {
-    if (!newAdmin.firstName || !newAdmin.email) {
-      flashToast('First name and email are required');
-      return;
+  // Save Admin (Create or Update with roleId = 1)
+  const handleSaveAdmin = async () => {
+    setSubmitting(true);
+    try {
+      if (isEditMode) {
+        // Update admin
+        const payload = {
+          userId: newAdmin.userId,
+          firstName: newAdmin.firstName,
+          lastName: newAdmin.lastName,
+          email: newAdmin.email,
+          mobile: newAdmin.mobile,
+          defaultAccountId: 1,
+          roleId: 1, // Role 1 is Admin
+          active: true, // Keep active by default on edit
+        };
+        await axiosClient.put(`/AdminUser/UpdateUser/${newAdmin.userId}`, payload);
+        showToast.success('Admin details updated successfully!');
+      } else {
+        // Create admin
+        const payload = {
+          firstName: newAdmin.firstName,
+          lastName: newAdmin.lastName,
+          email: newAdmin.email,
+          mobile: newAdmin.mobile,
+          password: newAdmin.password,
+          defaultAccountId: 1,
+          roleId: 1, // Role 1 is Admin
+          active: true,
+        };
+        await axiosClient.post('/AdminUser/CreateUser', payload);
+        showToast.success('New admin created successfully!');
+      }
+      setPanelOpen(false);
+      if (onRefresh) onRefresh();
+    } catch (error) {
+      showToast.error('Operation failed: ' + (error.response?.data?.message || error.message));
+    } finally {
+      setSubmitting(false);
     }
-    if (onAddAdmin) onAddAdmin(newAdmin);
-    setNewAdmin({ firstName: '', lastName: '', mobile: '', email: '' });
-    setPanelOpen(false);
-    flashToast(`${newAdmin.firstName} was added to the team`);
+  };
+
+  // Toggle Admin Status
+  const handleToggleAdminStatus = async (user) => {
+    try {
+      const payload = {
+        userId: user.userId,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        mobile: user.mobile,
+        defaultAccountId: user.defaultAccountId || 1,
+        roleId: user.roleId || 1,
+        active: !user.active,
+      };
+      await axiosClient.put(`/AdminUser/UpdateUser/${user.userId}`, payload);
+      showToast.success(`User ${!user.active ? 'activated' : 'deactivated'} successfully!`);
+      if (onRefresh) onRefresh();
+    } catch (error) {
+      showToast.error('Failed to change status: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  // Delete Admin
+  const handleDeleteAdmin = async (userId) => {
+    if (window.confirm('Are you sure you want to permanently delete this user?')) {
+      try {
+        await axiosClient.delete(`/AdminUser/DeleteUser/${userId}`);
+        showToast.success('User deleted successfully!');
+        if (onRefresh) onRefresh();
+      } catch (error) {
+        showToast.error('Failed to delete user: ' + (error.response?.data?.message || error.message));
+      }
+    }
   };
 
   const counts = useMemo(() => ({
@@ -102,10 +173,11 @@ const AdminUsers = ({ adminUsers, onRefresh, onAddAdmin, onEditAdmin, onDeleteAd
   const filteredUsers = users.filter((user) => {
     const q = searchTerm.toLowerCase();
     const matchesSearch =
-      user.firstName.toLowerCase().includes(q) ||
-      user.lastName.toLowerCase().includes(q) ||
-      user.email.toLowerCase().includes(q) ||
-      user.mobile.includes(searchTerm);
+      (user.firstName || '').toLowerCase().includes(q) ||
+      (user.lastName || '').toLowerCase().includes(q) ||
+      (user.email || '').toLowerCase().includes(q) ||
+      (user.mobile || '').includes(searchTerm) ||
+      String(user.userId || '').includes(searchTerm);
 
     const matchesRole =
       filterRole === 'all' ||
@@ -142,7 +214,7 @@ const AdminUsers = ({ adminUsers, onRefresh, onAddAdmin, onEditAdmin, onDeleteAd
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'AdminUsers');
     XLSX.writeFile(wb, 'AdminUsers_Report.xlsx');
-    alert('Admin users report downloaded successfully!');
+    showToast.success('Admin users report downloaded successfully!');
   };
 
   const statCard = (label, value, roleKey, statusKey) => {
@@ -216,6 +288,7 @@ const AdminUsers = ({ adminUsers, onRefresh, onAddAdmin, onEditAdmin, onDeleteAd
         .au-icon-btn { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line); background: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: var(--muted); transition: all 0.15s ease; }
         .au-icon-btn:hover.edit { border-color: var(--accent); color: var(--accent); }
         .au-icon-btn:hover.del { border-color: var(--danger); color: var(--danger); }
+        .au-icon-btn:hover.toggle { border-color: var(--success); color: var(--success); }
         .au-input:focus, .au-select:focus { outline: none; border-color: var(--accent) !important; box-shadow: 0 0 0 3px var(--accent-soft); }
         .au-overlay { position: fixed; inset: 0; background: rgba(18,21,28,0.42); z-index: 40; animation: auFade 0.15s ease; display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box; }
         .au-panel { position: relative; width: min(680px, 100%); max-height: 88vh; background: #fff; border-radius: 16px; z-index: 50; box-shadow: 0 24px 64px rgba(18,21,28,0.28); animation: auPop 0.18s cubic-bezier(.32,.72,0,1); display: flex; flex-direction: column; overflow: hidden; }
@@ -242,7 +315,7 @@ const AdminUsers = ({ adminUsers, onRefresh, onAddAdmin, onEditAdmin, onDeleteAd
           <button className="au-btn au-btn-ghost" onClick={handleDownloadExcel}>
             <FileDown size={15} /> Export
           </button>
-          <button className="au-btn au-btn-dark" onClick={() => setPanelOpen(true)}>
+          <button className="au-btn au-btn-dark" onClick={handleOpenAdd}>
             <UserPlus size={15} /> Add admin
           </button>
         </div>
@@ -383,10 +456,18 @@ const AdminUsers = ({ adminUsers, onRefresh, onAddAdmin, onEditAdmin, onDeleteAd
                       </span>
                     </td>
                     <td style={{ padding: '12px 20px' }}>
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600,
-                        color: user.active ? 'var(--success)' : 'var(--muted)',
-                      }}>
+                      <span 
+                        onClick={() => handleToggleAdminStatus(user)}
+                        title="Click to toggle active status"
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600,
+                          color: user.active ? 'var(--success)' : 'var(--muted)',
+                          cursor: 'pointer',
+                          padding: '2px 6px',
+                          borderRadius: 6,
+                          userSelect: 'none'
+                        }}
+                      >
                         <span style={{
                           width: 7, height: 7, borderRadius: '50%',
                           background: user.active ? 'var(--success)' : '#C7CACC',
@@ -395,24 +476,20 @@ const AdminUsers = ({ adminUsers, onRefresh, onAddAdmin, onEditAdmin, onDeleteAd
                       </span>
                     </td>
                     <td style={{ padding: '12px 20px', color: 'var(--muted)', fontSize: 12.5 }}>
-                      {format(new Date(user.createdDate), 'dd-MM-yyyy')}
+                      {user.createdDate ? format(new Date(user.createdDate), 'dd-MM-yyyy') : '—'}
                     </td>
                     <td style={{ padding: '12px 20px', textAlign: 'right' }}>
                       <div style={{ display: 'inline-flex', gap: 8 }}>
                         <button
                           className="au-icon-btn edit"
-                          onClick={() => onEditAdmin && onEditAdmin(user)}
-                          title="Edit user"
+                          onClick={() => handleOpenEdit(user)}
+                          title="Edit admin user"
                         >
                           <Pencil size={14} />
                         </button>
                         <button
                           className="au-icon-btn del"
-                          onClick={() => {
-                            if (window.confirm(`Delete user ${user.firstName} ${user.lastName}?`)) {
-                              onDeleteAdmin && onDeleteAdmin(user);
-                            }
-                          }}
+                          onClick={() => handleDeleteAdmin(user.userId)}
                           title="Delete user"
                         >
                           <Trash2 size={14} />
@@ -486,14 +563,18 @@ const AdminUsers = ({ adminUsers, onRefresh, onAddAdmin, onEditAdmin, onDeleteAd
         )}
       </div>
 
-      {/* Add admin modal */}
+      {/* Add / Edit admin modal */}
       {panelOpen && (
         <div className="au-overlay" onClick={() => setPanelOpen(false)}>
           <div className="au-panel" onClick={(e) => e.stopPropagation()}>
             <div style={{ padding: '22px 24px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 11.5, color: 'var(--accent)', marginBottom: 4 }}>NEW TEAM MEMBER</div>
-                <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontWeight: 700, fontSize: 19 }}>Add admin</div>
+                <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 11.5, color: 'var(--accent)', marginBottom: 4 }}>
+                  {isEditMode ? 'MODIFY TEAM MEMBER' : 'NEW TEAM MEMBER'}
+                </div>
+                <div style={{ fontFamily: 'Space Grotesk, sans-serif', fontWeight: 700, fontSize: 19 }}>
+                  {isEditMode ? 'Edit admin' : 'Add admin'}
+                </div>
               </div>
               <button className="au-icon-btn" onClick={() => setPanelOpen(false)}>
                 <X size={16} />
@@ -504,16 +585,17 @@ const AdminUsers = ({ adminUsers, onRefresh, onAddAdmin, onEditAdmin, onDeleteAd
               <AddAdmin
                 admin={newAdmin}
                 onInputChange={handleInputChange}
-                onAddAdmin={handleAddAdmin}
+                onAddAdmin={handleSaveAdmin}
+                isEdit={isEditMode}
+                submitting={submitting}
               />
             </div>
           </div>
         </div>
       )}
-
-      <Toast toast={toast} />
     </div>
   );
 };
 
 export default AdminUsers;
+
